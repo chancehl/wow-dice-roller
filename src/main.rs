@@ -3,6 +3,11 @@ use std::io;
 use std::thread;
 use std::time;
 
+struct Player {
+    name: String,
+    earnings: i32,
+}
+
 fn get_player_name(index: i32) -> String {
     let mut input = String::new();
 
@@ -34,43 +39,93 @@ fn get_wager() -> i32 {
     return wager;
 }
 
-fn calculate_sleep_time(sleep_time: i32) -> time::Duration {
-    if sleep_time >= 5000 {
-        return time::Duration::from_millis(250);
-    } else if sleep_time < 5000 && sleep_time >= 1000 {
-        return time::Duration::from_millis(500);
-    } else if sleep_time < 1000 && sleep_time >= 100 {
-        return time::Duration::from_millis(750);
-    } else if sleep_time < 100 && sleep_time >= 10 {
-        return time::Duration::from_millis(1000);
-    } else {
-        return time::Duration::from_millis(1250);
+fn convert_response_to_boolean(response: String) -> bool {
+    match response.as_str() {
+        "y" => return true,
+        "yes" => return true,
+        "Y" => return true,
+        "YES" => return true,
+        _ => return false,
     }
 }
 
-fn play(players: Vec<String>, wager: i32) {
+fn prompt_for_next_game() -> String {
+    let mut input = String::new();
+
+    println!("Play another game? (y/n): ");
+
+    io::stdin()
+        .read_line(&mut input)
+        .expect("Did not receieve player response");
+
+    let response = input.trim();
+
+    return response.to_string();
+}
+
+fn mutate_earnings(winning_player: &mut Player, losing_player: &mut Player, wager: i32) {
+    winning_player.earnings += wager;
+    losing_player.earnings -= wager;
+}
+
+fn announce_round_results(
+    winning_player: &Player,
+    player_one: &Player,
+    player_two: &Player,
+    wager: i32,
+) {
+    println!(
+        "{} wins {}g! ({} => {}g / {} => {}g)",
+        winning_player.name,
+        wager,
+        player_one.name,
+        player_one.earnings,
+        player_two.name,
+        player_two.earnings
+    );
+}
+
+fn play_round(player_one: &mut Player, player_two: &mut Player) {
     let mut player = 0;
     let mut starting_point = 10000;
     let mut rng = rand::thread_rng();
+
+    let wager = get_wager();
 
     while starting_point > 0 {
         // Generate new roll
         let roll = rng.gen_range(1..starting_point);
 
         // Print where we're at
+        let current_player_name = if player == 0 {
+            &player_one.name
+        } else {
+            &player_two.name
+        };
+
+        // Announce roll
         println!(
-            "[{}]: /roll 1-{} => {}",
-            players[player], starting_point, roll
+            "[{}] /roll 1-{} => {}",
+            current_player_name, starting_point, roll
         );
 
         // Check for winner
         if roll == 1 {
             if player == 0 {
-                println!("{} wins {}g!", players[0], wager);
+                // Mutate earnings
+                mutate_earnings(player_one, player_two, wager);
+
+                // Announce game state
+                announce_round_results(&player_one, &player_one, &player_two, wager);
             } else {
-                println!("{} wins {}g!", players[1], wager);
+                // Mutate earnings
+                mutate_earnings(player_two, player_one, wager);
+
+                // Announce game state
+                announce_round_results(&player_two, &player_one, &player_two, wager);
             }
 
+            // Exit loop
             return;
         }
 
@@ -78,29 +133,64 @@ fn play(players: Vec<String>, wager: i32) {
         starting_point = roll;
 
         // Toggle player
-        if player == 0 {
-            player = 1;
-        } else {
-            player = 0;
-        }
-
-        // Calculate sleep time
-        let sleep_time = calculate_sleep_time(starting_point);
+        player = if player == 0 { 1 } else { 0 };
 
         // Sleep to make it suspenseful!
-        thread::sleep(sleep_time);
+        thread::sleep(time::Duration::from_millis(250));
+    }
+}
+
+fn play(player_names: &Vec<String>) {
+    let mut rounds_played = 1;
+
+    let player_one_name = &player_names[0];
+    let player_two_name = &player_names[1];
+
+    let player_one = &mut Player {
+        name: player_one_name.to_string(),
+        earnings: 0,
+    };
+    let player_two = &mut Player {
+        name: player_two_name.to_string(),
+        earnings: 0,
+    };
+
+    loop {
+        play_round(player_one, player_two);
+
+        let response = prompt_for_next_game();
+        let should_continue = convert_response_to_boolean(response);
+
+        if should_continue {
+            rounds_played = rounds_played + 1;
+        } else {
+            break;
+        }
+    }
+
+    if player_one.earnings == player_two.earnings {
+        println!("It's a miracle! Nobody lost any money. Everyone can go home happy!")
+    } else if player_one.earnings > player_two.earnings {
+        println!(
+            "Game over. {} has earned {}g after {} rounds.",
+            player_one.name, player_one.earnings, rounds_played
+        );
+    } else {
+        println!(
+            "Game over. {} has earned {}g after {} rounds.",
+            player_two.name, player_two.earnings, rounds_played
+        );
     }
 }
 
 fn main() {
     let player_1 = get_player_name(1);
     let player_2 = get_player_name(2);
-    let wager = get_wager();
 
     let mut players = vec![];
 
     players.push(player_1);
     players.push(player_2);
 
-    play(players, wager);
+    play(&players);
 }
